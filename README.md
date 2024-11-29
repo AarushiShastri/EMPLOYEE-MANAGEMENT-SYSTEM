@@ -1,0 +1,1 @@
+This Python-based GUI application simplifies the management of an Employee Management Database system. It allows users to create, view, insert, update, and delete records across several tables. The application is built with Tkinter for the graphical user interface and uses MySQL for the database backend.
