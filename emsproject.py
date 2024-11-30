@@ -1,28 +1,28 @@
 import tkinter as tk
-from tkinter import messagebox, simpledialog, Toplevel, Label, Entry, Button, Text, Scrollbar
+from tkinter import ttk, messagebox, simpledialog, Toplevel
 import mysql.connector
 from mysql.connector import Error
 import os
 
+# Database connection setup
 def create_connection():
     try:
-        # Using environment variables for security
         host = os.getenv('DB_HOST', 'localhost')
         user = os.getenv('DB_USER', 'root')
-        password = os.getenv('DB_PASSWORD', 'Aarushi@1809')
+        password = os.getenv('DB_PASSWORD', 'Aarushi@1809')  # Update credentials
         connection = mysql.connector.connect(host=host, user=user, password=password)
         print("Successfully connected to MySQL database")
         return connection
     except Error as e:
         print(f"Error while connecting to MySQL: {e}")
         return None
-    
-def create_database(cursor):
+
+# Create database and tables
+def create_database_and_tables(conn):
+    cursor = conn.cursor()
     cursor.execute("CREATE DATABASE IF NOT EXISTS EmployeeDatabase")
     cursor.execute("USE EmployeeDatabase")
 
-def create_tables(cursor):
-    # Dictionary of table creation SQL commands
     tables = {
         "Employee": """
             CREATE TABLE IF NOT EXISTS Employee (
@@ -113,44 +113,95 @@ def create_tables(cursor):
             print(f"Table {table_name} created or already exists.")
         except mysql.connector.Error as err:
             print(f"Failed to create {table_name}: {err}")
-
-def view_table(conn, table_name):
-    window = Toplevel()
-    window.title(f"View Table: {table_name}")
-    text = Text(window, wrap="none")
-    scrollbar_x = Scrollbar(window, orient="horizontal", command=text.xview)
-    scrollbar_y = Scrollbar(window, orient="vertical", command=text.yview)
-    text.configure(xscrollcommand=scrollbar_x.set, yscrollcommand=scrollbar_y.set)
-    scrollbar_x.pack(side="bottom", fill="x")
-    scrollbar_y.pack(side="right", fill="y")
-    text.pack(side="left", fill="both", expand=True)
-    cursor = conn.cursor()
-    cursor.execute(f"SELECT * FROM {table_name}")
-    results = cursor.fetchall()
-    cursor.execute(f"DESCRIBE {table_name}")
-    fields = cursor.fetchall()
-    if results:
-        header = " | ".join([f"{field[0]}" for field in fields])
-        text.insert("end", header + "\n")
-        for row in results:
-            row_data = " | ".join([str(item) for item in row])
-            text.insert("end", row_data + "\n")
-    else:
-        text.insert("end", "No data found.")
     cursor.close()
 
+# Switch between frames
+def switch_frame(root, frames, frame_name):
+    for frame in frames.values():
+        frame.pack_forget()
+    frames[frame_name].pack(fill=tk.BOTH, expand=True)
+
+# Welcome page
+def create_welcome_frame(root, switch_to_tables):
+    frame = ttk.Frame(root)
+    ttk.Label(frame, text="Welcome to the Employee Management System", font=("Helvetica", 20, "bold")).pack(pady=20)
+    ttk.Label(frame, text="Manage your employee database efficiently with this tool.", font=("Helvetica", 14)).pack(pady=10)
+    ttk.Button(frame, text="Start Managing Tables", command=switch_to_tables).pack(pady=30)
+    return frame
+
+# Tables management page
+def create_tables_frame(root, conn, frames, switch_to_home):
+    frame = ttk.Frame(root)
+    ttk.Label(frame, text="Manage Tables", font=("Helvetica", 16, "bold")).pack(pady=20)
+    tables = ["Employee", "Department", "Project", "Dependent", "Works_On", "Manages", "Assigned_To", "Supervision"]
+
+    ttk.Button(frame, text="Back to Home", command=switch_to_home).pack(pady=5)
+
+    for table in tables:
+        ttk.Button(frame, text=f"{table} Table", command=lambda t=table: view_table_in_window(conn, t)).pack(pady=5)
+
+    return frame
+
+# View table and CRUD operations
+def view_table_in_window(conn, table_name):
+    window = Toplevel()
+    window.title(f"{table_name} Table")
+    window.geometry("900x600")
+    window.configure(bg="#F0F8FF")
+
+    # Treeview frame
+    tree_frame = ttk.Frame(window)
+    tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    tree = ttk.Treeview(tree_frame, show="headings", selectmode="browse")
+    tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    # Scrollbars
+    vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+    vsb.pack(side=tk.RIGHT, fill=tk.Y)
+    hsb = ttk.Scrollbar(window, orient="horizontal", command=tree.xview)
+    hsb.pack(side=tk.BOTTOM, fill=tk.X)
+    tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+    # Fetch data
+    cursor = conn.cursor()
+    cursor.execute(f"DESCRIBE {table_name}")
+    columns = [col[0] for col in cursor.fetchall()]
+    cursor.execute(f"SELECT * FROM {table_name}")
+    rows = cursor.fetchall()
+
+    # Set columns in Treeview
+    tree["columns"] = columns
+    for col in columns:
+        tree.heading(col, text=col)
+        tree.column(col, width=120, anchor=tk.CENTER)
+
+    for row in rows:
+        tree.insert("", "end", values=row)
+
+    # CRUD Buttons
+    buttons_frame = ttk.Frame(window)
+    buttons_frame.pack(fill=tk.X, padx=10, pady=10)
+
+    ttk.Button(buttons_frame, text="Insert", command=lambda: insert_into_table(conn, table_name)).pack(side=tk.LEFT, padx=5)
+    ttk.Button(buttons_frame, text="Update", command=lambda: update_table(conn, table_name)).pack(side=tk.LEFT, padx=5)
+    ttk.Button(buttons_frame, text="Delete", command=lambda: delete_from_table(conn, table_name)).pack(side=tk.LEFT, padx=5)
+
+# Insert data into table
 def insert_into_table(conn, table_name):
     window = Toplevel()
-    window.title(f"Insert into Table: {table_name}")
+    window.title(f"Insert into {table_name}")
     cursor = conn.cursor()
     cursor.execute(f"DESCRIBE {table_name}")
     fields = cursor.fetchall()
     entries = {}
-    for index, field in enumerate(fields):
-        Label(window, text=field[0]).grid(row=index, column=0)
-        entry = Entry(window)
-        entry.grid(row=index, column=1)
+
+    for idx, field in enumerate(fields):
+        ttk.Label(window, text=field[0]).grid(row=idx, column=0, padx=10, pady=5)
+        entry = ttk.Entry(window)
+        entry.grid(row=idx, column=1, padx=10, pady=5)
         entries[field[0]] = entry
+
     def submit():
         columns = ', '.join(entries.keys())
         placeholders = ', '.join(['%s'] * len(entries))
@@ -163,83 +214,83 @@ def insert_into_table(conn, table_name):
             window.destroy()
         except Error as e:
             messagebox.showerror("Error", f"Failed to insert record: {e}")
-    Button(window, text="Insert Record", command=submit).grid(row=len(fields), columnspan=2)
 
+    ttk.Button(window, text="Submit", command=submit).grid(row=len(fields), columnspan=2, pady=10)
+
+# Update data in table
 def update_table(conn, table_name):
     window = Toplevel()
-    window.title(f"Update Table: {table_name}")
+    window.title(f"Update {table_name}")
     cursor = conn.cursor()
     cursor.execute(f"DESCRIBE {table_name}")
     fields = cursor.fetchall()
     entries = {}
-    for index, field in enumerate(fields):
-        Label(window, text=field[0]).grid(row=index, column=0)
-        entry = Entry(window)
-        entry.grid(row=index, column=1)
+
+    ttk.Label(window, text="Condition for update (e.g., aadhar='123'):").grid(row=0, columnspan=2, pady=10)
+    condition_entry = ttk.Entry(window)
+    condition_entry.grid(row=1, columnspan=2, pady=5)
+
+    for idx, field in enumerate(fields, start=2):
+        ttk.Label(window, text=field[0]).grid(row=idx, column=0, padx=10, pady=5)
+        entry = ttk.Entry(window)
+        entry.grid(row=idx, column=1, padx=10, pady=5)
         entries[field[0]] = entry
+
     def submit():
-        set_clause = ', '.join([f"{k} = %s" for k in entries.keys()])
+        set_clause = ', '.join([f"{key}=%s" for key in entries.keys()])
         values = [entry.get() for entry in entries.values()]
-        where_condition = simpledialog.askstring("Update Condition", "Enter the condition (e.g., aadhar = '123456789012'):")
-        query = f"UPDATE {table_name} SET {set_clause} WHERE {where_condition}"
+        query = f"UPDATE {table_name} SET {set_clause} WHERE {condition_entry.get()}"
         try:
             cursor.execute(query, values)
             conn.commit()
-            if cursor.rowcount > 0:
-                messagebox.showinfo("Success", "Record updated successfully.")
-            else:
-                messagebox.showinfo("No Action", "No record was updated.")
+            messagebox.showinfo("Success", "Record updated successfully.")
             window.destroy()
         except Error as e:
             messagebox.showerror("Error", f"Failed to update record: {e}")
-    Button(window, text="Update Record", command=submit).grid(row=len(fields), columnspan=2)
 
+    ttk.Button(window, text="Update", command=submit).grid(row=len(fields) + 2, columnspan=2, pady=10)
+
+# Delete data from table
 def delete_from_table(conn, table_name):
     window = Toplevel()
-    window.title(f"Delete from Table: {table_name}")
+    window.title(f"Delete from {table_name}")
+
+    ttk.Label(window, text="Condition for deletion (e.g., aadhar='123'):").pack(pady=5)
+    condition_entry = ttk.Entry(window)
+    condition_entry.pack(pady=5)
+
     def submit():
-        where_condition = simpledialog.askstring("Delete Condition", "Enter the condition for deleting (e.g., aadhar = '123456789012'):")
-        if not where_condition:
-            messagebox.showerror("Error", "You must enter a condition to delete.")
-            return
-        query = f"DELETE FROM {table_name} WHERE {where_condition}"
+        query = f"DELETE FROM {table_name} WHERE {condition_entry.get()}"
         try:
             cursor = conn.cursor()
             cursor.execute(query)
             conn.commit()
-            if cursor.rowcount > 0:
-                messagebox.showinfo("Success", "Record deleted successfully.")
-            else:
-                messagebox.showinfo("No Action", "No record was deleted.")
+            messagebox.showinfo("Success", "Record deleted successfully.")
             window.destroy()
         except Error as e:
             messagebox.showerror("Error", f"Failed to delete record: {e}")
-    Button(window, text="Delete Record", command=submit).pack()
-def create_table_buttons(root, conn):
-    tables = ["Employee", "Department", "Project", "Dependent", "Works_On", "Manages", "Assigned_To", "Supervision"]
-    for table in tables:
-        frame = tk.Frame(root)
-        frame.pack(pady=5)
-        tk.Label(frame, text=table).pack(side=tk.LEFT)
-        # Fixing the lambda capture issue
-        tk.Button(frame, text="View", command=lambda t=table: view_table(conn, t)).pack(side=tk.LEFT)
-        tk.Button(frame, text="Insert", command=lambda t=table: insert_into_table(conn, t)).pack(side=tk.LEFT)
-        tk.Button(frame, text="Update", command=lambda t=table: update_table(conn, t)).pack(side=tk.LEFT)
-        tk.Button(frame, text="Delete", command=lambda t=table: delete_from_table(conn, t)).pack(side=tk.LEFT)
 
+    ttk.Button(window, text="Delete", command=submit).pack(pady=10)
+
+# Main application
 def main():
     conn = create_connection()
-    if conn is not None:
-        with conn.cursor() as cursor:
-            create_database(cursor)
-            create_tables(cursor)
+    if conn:
+        create_database_and_tables(conn)
+
         root = tk.Tk()
         root.title("Database Management System")
-        create_table_buttons(root, conn)
+        root.geometry("900x600")
+        root.configure(bg="#ADD8E6")
+
+        frames = {}
+        frames["Welcome"] = create_welcome_frame(root, lambda: switch_frame(root, frames, "Tables"))
+        frames["Tables"] = create_tables_frame(root, conn, frames, lambda: switch_frame(root, frames, "Welcome"))
+
+        switch_frame(root, frames, "Welcome")
+
         root.mainloop()
         conn.close()
-    else:
-        print("Error! Cannot create the database connection.")
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     main()
